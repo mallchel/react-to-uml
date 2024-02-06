@@ -1,0 +1,61 @@
+@startuml
+left to right direction
+frame "app" {
+  rectangle "Root.js" {
+}
+rectangle "components/Application/ApplicationMobile.tsx" {
+}
+rectangle "components/Application/PassedToProps.tsx" {
+}
+rectangle "components/Application/ApplicationProvider.tsx" {
+}
+rectangle "components/Portal/index.tsx" {
+}
+rectangle "components/Application/Application.tsx" {
+}
+rectangle "components/Thumbnails/ThumbnailsMobile.tsx" {
+}
+rectangle "components/Modals/Modals.tsx" {
+}
+rectangle "components/Thumbnails/Thumbnails.tsx" {
+}
+rectangle "components/Modals/PageDeletingWarning/PageDeletingWarning.tsx" {
+}
+rectangle "components/Modals/Attachment/Attachment.tsx" {
+}
+rectangle "components/Thumbnails/ThumbnailsFooter.tsx" {
+}
+rectangle "components/Thumbnails/ThumbnailsMobileFooter.tsx" {
+}
+rectangle "components/Modals/Attachment/Desktop/Desktop.tsx" {
+}
+rectangle "client.js" {
+}
+
+ }
+frame "custom-library" {
+  rectangle "Grid/Grid.tsx" {
+}
+
+ }
+rectangle "/Test.tsx" {
+}
+[Root.js] -[#006400]-> [/Test.tsx]
+[Root.js] -[#000000]-> [components/Application/ApplicationMobile.tsx]
+[Root.js] -[#0000FF]-> [components/Application/PassedToProps.tsx]
+[Root.js] -[#8A2BE2]-> [components/Application/ApplicationProvider.tsx]
+[Root.js] -[#A52A2A]-> [components/Portal/index.tsx]
+[Root.js] -[#DEB887]-> [components/Application/Application.tsx]
+[components/Application/ApplicationMobile.tsx] -[#006400]-> [components/Thumbnails/ThumbnailsMobile.tsx]
+[components/Application/ApplicationMobile.tsx] -[#000000]-> [components/Modals/Modals.tsx]
+[components/Application/Application.tsx] -[#006400]-> [components/Modals/Modals.tsx]
+[components/Application/Application.tsx] -[#000000]-> [components/Thumbnails/Thumbnails.tsx]
+[components/Application/Application.tsx] -[#0000FF]-> [Grid/Grid.tsx]
+[components/Modals/Modals.tsx] -[#006400]-> [components/Portal/index.tsx]
+[components/Modals/Modals.tsx] -[#000000]-> [components/Modals/PageDeletingWarning/PageDeletingWarning.tsx]
+[components/Modals/Modals.tsx] -[#0000FF]-> [components/Modals/Attachment/Attachment.tsx]
+[components/Thumbnails/Thumbnails.tsx] -[#006400]-> [components/Thumbnails/ThumbnailsFooter.tsx]
+[components/Thumbnails/ThumbnailsMobile.tsx] -[#006400]-> [components/Thumbnails/ThumbnailsMobileFooter.tsx]
+[components/Modals/Attachment/Attachment.tsx] -[#006400]-> [components/Modals/Attachment/Desktop/Desktop.tsx]
+[client.js] -[#006400]-> [Root.js]
+@enduml

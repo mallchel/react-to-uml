@@ -1,0 +1,28 @@
+@startuml
+"/components/Application/Application.tsx" --> "/components/Thumbnails/Thumbnails.tsx"
+"/components/Application/Application.tsx" --> "/custom-library/Grid/Grid.tsx"
+rectangle "/components/Application/ApplicationMobile.tsx" {
+}
+rectangle "/custom-library/Button/Button.tsx" {
+}
+rectangle "/components/Thumbnails/ThumbnailsMobile.tsx" {
+}
+[/components/Application/ApplicationMobile.tsx] --> [/custom-library/Button/Button.tsx]
+[/components/Application/ApplicationMobile.tsx] --> [/components/Thumbnails/ThumbnailsMobile.tsx]
+rectangle "/components/Application/PassedToProps.tsx" {
+}
+rectangle "/custom-library/index.js" {
+}
+[/custom-library/index.js] --> [/custom-library/Button/Button.tsx]
+rectangle "/components/Thumbnails/ThumbnailsMobileFooter.tsx" {
+}
+[/components/Thumbnails/ThumbnailsMobile.tsx] --> [/components/Thumbnails/ThumbnailsMobileFooter.tsx]
+[/components/Thumbnails/ThumbnailsMobileFooter.tsx] --> [/custom-library/index.js]
+rectangle "/Root.js" {
+}
+"/Root.js" --> "/components/Application/Application.tsx"
+"/Root.js" --> "/components/Application/ApplicationMobile.tsx"
+"/Root.js" --> "/components/Application/PassedToProps.tsx"
+"/Root.js" --> "/custom-library/index.js"
+"/Root.js" --> "/custom-library/Button/Button.tsx"
+@enduml
