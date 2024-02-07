@@ -12,6 +12,7 @@
   "files": [
     "lib"
   ],
+  "license": "GPL-3.0-only",
   "homepage": "https://github.com/mallchel/react-to-uml",
   "author": "sebastianalfabc@gmail.com",
   "repository": {
