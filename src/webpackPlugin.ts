@@ -610,7 +610,6 @@ export class MakeUmlFromCode {
     connectionsUserRequest?.forEach((connectionUserRequest) => {
       let currentCount = this.counterPerFile.get(connectionUserRequest);
 
-      // TODO: replace 4 with param
       if (currentCount > 0 && currentCount <= this.repetitiveCountForRemoveFromTree) {
         this.usedUserRequests.add(connectionUserRequest);
       }

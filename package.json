@@ -3,9 +3,21 @@
   "version": "1.0.0",
   "description": "",
   "main": "lib/makePlugins.js",
+  "keywords": [
+    "react-components-tree",
+    "react-to-uml",
+    "react-uml",
+    "visualize-react-components"
+  ],
   "files": [
     "lib"
   ],
+  "homepage": "https://github.com/mallchel/react-to-uml",
+  "author": "sebastianalfabc@gmail.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mallchel/react-to-uml"
+  },
   "workspaces": {
     "packages": [
       "packages/*"
@@ -20,8 +32,6 @@
     "build-lib": "tsc --project ./tsconfig.lib.json",
     "prepublishOnly": "yarn build-lib"
   },
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@babel/core": "^7.22.11",
     "@babel/parser": "^7.21.8",

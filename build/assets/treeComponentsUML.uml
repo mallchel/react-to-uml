@@ -5,9 +5,9 @@ frame "app" {
 }
 rectangle "components/Application/ApplicationMobile.tsx" {
 }
-rectangle "components/Application/PassedToProps.tsx" {
-}
 rectangle "components/Application/ApplicationProvider.tsx" {
+}
+rectangle "components/Application/PassedToProps.tsx" {
 }
 rectangle "components/Portal/index.tsx" {
 }
@@ -42,8 +42,8 @@ rectangle "/Test.tsx" {
 }
 [Root.js] -[#006400]-> [/Test.tsx]
 [Root.js] -[#000000]-> [components/Application/ApplicationMobile.tsx]
-[Root.js] -[#0000FF]-> [components/Application/PassedToProps.tsx]
-[Root.js] -[#8A2BE2]-> [components/Application/ApplicationProvider.tsx]
+[Root.js] -[#0000FF]-> [components/Application/ApplicationProvider.tsx]
+[Root.js] -[#8A2BE2]-> [components/Application/PassedToProps.tsx]
 [Root.js] -[#A52A2A]-> [components/Portal/index.tsx]
 [Root.js] -[#DEB887]-> [components/Application/Application.tsx]
 [components/Application/ApplicationMobile.tsx] -[#006400]-> [components/Thumbnails/ThumbnailsMobile.tsx]

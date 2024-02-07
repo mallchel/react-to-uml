@@ -37,8 +37,8 @@ export default {
         use: {
           loader: 'babel-loader',
           options: {
+            plugins: [babelPlugin],
             presets: [
-              [{ plugins: [babelPlugin] }],
               ['@babel/preset-typescript'],
               ['@babel/preset-react', { runtime: 'automatic' }],
               ['@babel/preset-env'],
