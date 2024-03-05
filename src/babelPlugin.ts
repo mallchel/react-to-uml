@@ -2,7 +2,6 @@ import { writeFileSync } from 'fs';
 import traverse, { Node, NodePath } from '@babel/traverse';
 import {
   isVariableDeclarator,
-  isExportAllDeclaration,
   isVariableDeclaration,
   isCallExpression,
   ExportNamedDeclaration,
@@ -17,7 +16,6 @@ import {
   isExportDefaultDeclaration,
   isExportNamedDeclaration,
 } from '@babel/types';
-import { parse } from '@babel/parser';
 
 import { debugLog, ensureArrExistence, excludePackagesPaths, getIsAcceptableModule } from './utils';
 import { ConnectionIdsByFileName } from './types';
@@ -64,14 +62,8 @@ export const gatherComponentsByFileName = ({
     }
   };
 
-  // const traverseJsxOpeningConfig = {};
-
   return {
     onEnd: () => {
-      // TODO: replace Set with array
-      // originalComponentNamesByFileName[state.filename] = [
-      //   ...new Set(originalComponentNamesByFileName[state.filename]),
-      // ];
       writeFileSync(
         outFileName,
         JSON.stringify({
@@ -101,9 +93,6 @@ export const gatherComponentsByFileName = ({
                 }
 
                 path.node.specifiers.forEach(({ local, type, ...rest }) => {
-                  // fallback to default import name "local.name"
-                  // const importedName =
-                  //   (rest as { imported?: { name?: string } }).imported?.name ?? local.name;
                   const importedName =
                     (rest as { imported?: { name?: string } }).imported?.name ?? 'default';
 
@@ -136,12 +125,6 @@ export const gatherComponentsByFileName = ({
                     varsWithJsx.add(targeParentPath.node.id.name);
                   }
                   targeParentPath = targeParentPath.parentPath;
-
-                  // debugLog('targeParentNode', {
-                  //   targeParentNode: targeParentPath?.node,
-                  //   varsWithJsx,
-                  //   'state.filename': state.filename,
-                  // });
                 }
               },
             },
@@ -187,11 +170,13 @@ export const gatherComponentsByFileName = ({
                   ): string | undefined => {
                     let name: string | undefined;
 
-                    if ((name = checkIdentifier(node.declarations[0].id as Identifier))) {
+                    name = checkIdentifier(node.declarations[0].id as Identifier);
+                    if (name) {
                       return name;
                     }
 
-                    if ((name = checkIdentifier(node.declarations[0].init as Identifier))) {
+                    name = checkIdentifier(node.declarations[0].init as Identifier);
+                    if (name) {
                       return name;
                     }
 
@@ -207,12 +192,12 @@ export const gatherComponentsByFileName = ({
                   const findWithinCallExpression = (node: CallExpression) => {
                     let name: string | undefined | null;
 
-                    if (
-                      (name =
-                        checkIdentifier(node.arguments[0] as Identifier) ||
-                        ((node.arguments[0] as ClassExpression | undefined)?.id &&
-                          checkIdentifier((node.arguments[0] as ClassExpression).id as Identifier)))
-                    ) {
+                    name =
+                      checkIdentifier(node.arguments[0] as Identifier) ||
+                      ((node.arguments[0] as ClassExpression | undefined)?.id &&
+                        checkIdentifier((node.arguments[0] as ClassExpression).id as Identifier));
+
+                    if (name) {
                       return name;
                     }
                   };

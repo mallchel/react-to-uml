@@ -120,8 +120,6 @@ export class MakeUmlFromCode {
       : this.proxyPathsWithJsx.get(shortenedConnectionUserRequest)?.get(exportId);
   };
 
-  // FIXME: remove proxy paths from tree to avoid redundant used count
-  // FIXME: remove connections from treeUML without root parent
   tryToAddToTree = ({
     userRequest,
     shortenedConnectionUserRequest,
