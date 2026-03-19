@@ -1,7 +1,7 @@
 {
   "name": "react-to-uml",
-  "version": "1.0.5",
-  "main": "lib/makePlugins.js",
+  "version": "1.0.6",
+  "main": "lib/index.js",
   "keywords": [
     "react-components-tree",
     "react-to-uml",
@@ -11,6 +11,9 @@
   "files": [
     "lib"
   ],
+  "bin": {
+    "react-to-uml": "lib/cli.js"
+  },
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/mallchel/react-to-uml",
   "author": "sebastianalfabc@gmail.com",
@@ -25,11 +28,13 @@
     ]
   },
   "scripts": {
-    "start": "webpack serve -c ./webpack.dev.ts",
-    "build": "ts-node ./webpack.prod.ts",
+    "start": "rsbuild dev -c ./packages/app/rsbuild.config.ts",
+    "build": "rsbuild build -c ./packages/app/rsbuild.config.ts",
+    "start-graph": "rsbuild dev -c ./packages/graph-viewer/rsbuild.config.ts",
+    "build-graph": "rsbuild build -c ./packages/graph-viewer/rsbuild.config.ts",
     "build-watch": "nodemon --debug --watch",
+    "run-uml": "ts-node ./src/cli.ts",
     "test": "node --require tsm --test --watch ./src/**/*-test.ts",
-    "audit": "ts-node audits/audit.ts",
     "build-lib": "tsc --project ./tsconfig.lib.json",
     "prepublishOnly": "yarn build-lib"
   },
@@ -43,8 +48,8 @@
     "@types/glob": "^8.1.0",
     "@types/node": "^20.5.9",
     "@types/react": "^18.2.46",
-    "@types/webpack": "^5.28.2",
-    "@webpack-cli/serve": "^2.0.5",
+    "@rsbuild/core": "^1.5.16",
+    "@rsbuild/plugin-react": "^1.4.3",
     "cross-env": "^7.0.3",
     "glob": "^10.2.4",
     "html-webpack-plugin": "^5.5.3",
@@ -55,11 +60,7 @@
     "ts-node": "^10.9.1",
     "tsconfig-paths": "^4.2.0",
     "tsm": "^2.3.0",
-    "typescript": "^5.3.3",
-    "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4",
-    "webpack-dev-server": "^4.15.1",
-    "webpack-merge": "^5.9.0"
+    "typescript": "^5.3.3"
   },
   "dependencies": {
     "@babel/traverse": "^7.21.5",

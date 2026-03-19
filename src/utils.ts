@@ -1,5 +1,3 @@
-import { ConnectionIdsByFileName } from './types';
-
 export const debugLog = (...args: any[]) => {
   if (process.argv.includes('--debug')) {
     console.log(...args);
@@ -23,7 +21,7 @@ export const getIsAcceptableModule = ({
   );
 };
 
-export const ensureArrExistence = (map: ConnectionIdsByFileName, key: string) => {
+export const ensureArrExistence = <T>(map: Map<string, T[]>, key: string) => {
   if (!map.has(key)) {
     map.set(key, []);
   }
