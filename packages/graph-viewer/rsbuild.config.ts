@@ -14,13 +14,14 @@ export default defineConfig({
   },
   output: {
     distPath: {
-      root: path.resolve(process.cwd(), 'build/graph-viewer'),
+      root: path.resolve(process.cwd(), 'lib/graph-viewer'),
     },
   },
+  // Graph JSON assets are produced by the CLI gather step in the user's CWD
+  // and are served by src/serve.ts at runtime.
   server: {
     publicDir: [
       { name: path.resolve(process.cwd(), 'public') },
-      { name: path.resolve(process.cwd(), 'build/assets') },
     ],
   },
   dev: {

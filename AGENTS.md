@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This repository builds and publishes `react-to-uml`, a TypeScript library that gathers React component usage from source files and emits UML output without requiring Babel/Webpack plugin integration.
+This repository builds and publishes `react-to-uml`, a TypeScript library that gathers React component usage from source files and emits graph output without requiring Babel/Webpack plugin integration.
 
 Core flow:
 1. `src/core/walk.ts` traverses files from an entrypoint.
 2. `src/core/gather.ts` parses imports/exports/JSX signals into graph data.
-3. `src/core/buildUml.ts` resolves graph edges and writes UML/tree artifacts.
-4. `src/index.ts` exposes orchestration helpers (`runGatherInfo`, `runBuildUml`, `runFromEnv`).
+3. `src/core/buildUml.ts` resolves graph edges and writes tree artifacts.
+4. `src/index.ts` exposes orchestration helpers (`runGatherInfo`, `runBuildGraph`, `runFromEnv`).
 
 ## Repo Layout
 
@@ -58,7 +58,7 @@ Note: `prepublishOnly` runs `yarn build-lib`.
 ### Don't
 
 - Do not commit generated `lib/` artifacts.
-- Do not rename or remove public `runGatherInfo`/`runBuildUml` options without explicit approval.
+- Do not rename or remove public `runGatherInfo`/`runBuildGraph` options without explicit approval.
 - Do not introduce unrelated refactors in `src/core/buildUml.ts` or `src/core/gather.ts` while fixing focused issues.
 - Do not assume lint/CI will catch regressions (no dedicated lint or CI workflow is configured).
 
@@ -68,14 +68,14 @@ Exercise extra care in:
 - `src/core/buildUml.ts`: proxy resolution and repeated-node filtering.
 - `src/core/gather.ts`: AST traversal and export/import inference edge cases.
 - `src/core/walk.ts`: path resolution behavior (relative imports, extensions).
-- Path filtering via `packagesPaths` regex: small regex/path changes can silently exclude files.
+- Path resolution in `walk.ts`: small path/extension changes can silently exclude files.
 
 When changing these files, prefer incremental edits, preserve existing behavior, and validate with a real/demo build.
 
 ## Debugging
 
 - Verbose internal logging is toggled by `--debug` (see `src/utils.ts` and README troubleshooting).
-- For build/debug reproduction, run the same command with `--debug` and inspect generated JSON/UML artifacts.
+- For build/debug reproduction, run the same command with `--debug` and inspect generated JSON artifacts.
 
 ## Documentation and Licensing
 

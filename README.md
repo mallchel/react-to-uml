@@ -9,7 +9,7 @@
 </h3>
 
 <p align="center">
-  Visualize your react components tree with uml diagram
+  Visualize your react components tree with graph diagram
 </p>
 
 <p align="center">
@@ -18,73 +18,74 @@
   <a href="https://www.npmjs.com/package/react-to-uml"><img src="https://img.shields.io/github/stars/mallchel/react-to-uml?style=flat-square"></a>
 </p>
 
-It analyzes your source files and generates a UML diagram for the React component tree.
+It analyzes your source files and generates a graph for the React component tree.
 
 ## Framework-agnostic mode (recommended)
 
 You can now run `react-to-uml` without wiring Babel/Webpack plugins by using a two-step flow:
 
 1. Gather component graph from source files
-2. Build UML from gathered graph
+2. Build graph from gathered graph
 
 ```sh
 # Step 1: gather
-IS_GATHER_INFO=true IS_BUILD_UML=false ENTRY=./packages/app/client.js yarn run-uml
+IS_GATHER_INFO=true IS_BUILD_GRAPH=false ENTRY=./packages/app/client.js yarn run-graph
 
-# Step 2: build uml
-IS_GATHER_INFO=false IS_BUILD_UML=true ENTRY=./packages/app/client.js yarn run-uml
+# Step 2: build graph
+IS_GATHER_INFO=false IS_BUILD_GRAPH=true ENTRY=./packages/app/client.js yarn run-graph
 ```
 
 Environment variables:
 - `ENTRY`: entry file path
-- `PACKAGES_PATHS_REGEX`: regex for package roots (default: `<cwd>/(packages)`)
 - `EXTENSIONS`: comma-separated extensions (default: `jsx,js,tsx,ts`)
 - `DUMP_DIR`: output directory (default: `./build/assets`)
 - `GATHERED_GRAPH_FILE`: gathered graph file path
-- `OUT_UML_FILE`: target tree JSON output path (`.uml` is generated next to it)
+- `OUT_GRAPH_FILE`: target tree JSON output path
+- `IS_GATHER_INFO`: run gather stage (`true` / `false`, default: `true`)
+- `IS_BUILD_GRAPH`: run build stage (`true` / `false`, default: `true`)
+- `IS_GROUP_BY_PARENT_DIR`: group output by first directory segment (default: `true`)
+- `REPETITIVE_COUNT_FOR_REMOVE_FROM_TREE`: max repetition threshold for visible nodes
 
 ## Install
-```ts
+```sh
 npm i react-to-uml
 ```
 
 ## Programmatic usage
 ```ts
 import path from 'node:path';
-import { runGatherInfo, runBuildUml } from 'react-to-uml';
+import { runGatherInfo, runBuildGraph } from 'react-to-uml';
 
 const rootPath = process.cwd();
-const packagesPaths = new RegExp(rootPath + '/(packages)');
 const entryFileName = path.join(rootPath, 'packages/app/client.js');
 const gatheredGraphFilePath = path.join(rootPath, 'build/assets/gatheredComponentsByFileName.json');
-const outUmlFileName = path.join(rootPath, 'build/assets/treeComponentsUML.json');
+const outGraphFileName = path.join(rootPath, 'build/assets/treeComponentsGraph.json');
 
 runGatherInfo({
   entryFileName,
-  packagesPaths,
   outFileName: gatheredGraphFilePath,
 });
 
-runBuildUml({
+runBuildGraph({
   entryFileName,
-  packagesPaths,
   gatheredGraphFilePath,
-  outUmlFileName,
+  outGraphFileName,
   isGroupByParentDirNeeded: true,
 });
 ```
 
 ## After build your project
-1. You will get `treeComponentsUML.json` with the graph tree data.
-2. You can start the React+D3 graph viewer app:
+1. You will get `treeComponentsGraph.json` with the graph tree data.
+2. You will get `graphNodeMetaByFileName.json` with package/directory metadata per node.
+3. You can start the React+D3 graph viewer app:
 
 ```sh
-yarn run-uml
+yarn run-graph
 yarn start-graph
 ```
 
-3. The viewer loads graph data from `build/assets/treeComponentsUML.json`.
-4. `treeComponentsUML.uml` is still generated for compatibility.
+4. The viewer loads graph data from `build/assets/treeComponentsGraph.json`.
+5. The viewer reads package metadata from `build/assets/graphNodeMetaByFileName.json`.
 
 ## Local run modes
 
@@ -93,20 +94,20 @@ yarn start-graph
 
 ## Extra options
 ### acceptableExts?: string[];
-by default `['jsx', 'js', 'tsx', 'ts']` - files in which library will looking for the jsx
+by default `['jsx', 'js', 'tsx', 'ts']` - file extensions used for traversal and JSX detection.
 
 ### isGroupByParentDirNeeded?: boolean;
-by default `false` - grouping your components by root dir, e.g. for monorepo with packages root dir it will group it like in the picture below
+by default `false` - group components by root directory (useful for monorepos).
 
 <img width="1989" alt="image" src="https://github.com/mallchel/react-to-uml/assets/21968689/851de3e9-ee2f-4a84-8dc1-97007a028102">
 
 ### repetitiveCountForRemoveFromTree?: number;
-by default `4` - to adjust your zoom of view, components with a count of repetitive more than this param will be removed from the diagram.
+by default `4` - hide over-repeated nodes above this threshold to reduce graph noise.
 
 ## Troubleshooting
 To turn on extra logs in this library use `--debug` with your build script.
-```ts
-npm run build --debug
+```sh
+yarn run-graph --debug
 ```
 
 ## What is next?
