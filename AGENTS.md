@@ -7,15 +7,16 @@ This repository builds and publishes `react-to-uml`, a TypeScript library that g
 Core flow:
 1. `src/core/walk.ts` traverses files from an entrypoint.
 2. `src/core/gather.ts` parses imports/exports/JSX signals into graph data.
-3. `src/core/buildUml.ts` resolves graph edges and writes tree artifacts.
-4. `src/index.ts` exposes orchestration helpers (`runGatherInfo`, `runBuildGraph`, `runFromEnv`).
+3. `src/core/buildGraph.ts` resolves graph edges and writes tree artifacts.
+4. `src/index.ts` exposes orchestration helpers (`runGatherInfo`, `runBuildGraph`, `runFromEnv`, `startViewer`).
+5. `src/cli.ts` is the `react-to-uml` bin (env-driven, `--serve` starts `src/serve.ts`).
 
 ## Repo Layout
 
 - `src/`: library source code
 - `src/__tests__/`: Node test files and fixtures
 - `packages/`: local demo/workspace packages
-- `lib/`: publish output from `build-lib` (generated, not committed)
+- `lib/`: publish output from `yarn build` (library + `lib/graph-viewer`) (generated, not committed)
 - `audits/`: local scripts/utilities
 
 ## Package Manager and Commands
@@ -23,13 +24,13 @@ Core flow:
 Use Yarn in this repository (lockfile is `yarn.lock`).
 
 - Install: `yarn`
-- Dev server/demo build: `yarn start`
-- Local production-like build: `yarn build`
-- Library build (publish artifact): `yarn build-lib`
-- Tests (default watch mode): `yarn test`
-- Tests (one-shot, preferred for agents/CI-like runs): `node --require tsm --test ./src/**/*-test.ts`
+- Sample repo (`packages/app`): `yarn sample` (or `sample:gather` / `sample:graph`); run the sample app with `yarn sample:app`
+- Target repo from `.env` `ENTRY`: `yarn target` (or `target:gather` / `target:graph`)
+- Viewer dev mode: `yarn dev:viewer`
+- Publish build: `yarn build` (clean + `build:lib` + `build:viewer`)
+- Tests (one-shot): `yarn test`; watch mode: `yarn test:watch`
 
-Note: `prepublishOnly` runs `yarn build-lib`.
+Note: `prepublishOnly` runs `yarn test && yarn build`. No yarn workspaces (they force `private: true`); the sample library is linked via the `@ui/kit` `link:` devDependency.
 
 ## Testing Conventions
 
@@ -52,20 +53,20 @@ Note: `prepublishOnly` runs `yarn build-lib`.
 - Make focused, minimal edits that preserve public API shape unless a breaking change is explicitly requested.
 - Keep gather/build data contracts in sync when modifying shared graph structures.
 - Preserve option defaults and behavior documented in `README.md` (`acceptableExts`, grouping, repetition filtering, env vars).
-- Run relevant validation after substantive edits: `yarn build-lib` and one-shot tests.
+- Run relevant validation after substantive edits: `yarn build` and `yarn test`.
 - Update docs when changing user-facing options or output files.
 
 ### Don't
 
 - Do not commit generated `lib/` artifacts.
 - Do not rename or remove public `runGatherInfo`/`runBuildGraph` options without explicit approval.
-- Do not introduce unrelated refactors in `src/core/buildUml.ts` or `src/core/gather.ts` while fixing focused issues.
+- Do not introduce unrelated refactors in `src/core/buildGraph.ts` or `src/core/gather.ts` while fixing focused issues.
 - Do not assume lint/CI will catch regressions (no dedicated lint or CI workflow is configured).
 
 ## Risky Areas
 
 Exercise extra care in:
-- `src/core/buildUml.ts`: proxy resolution and repeated-node filtering.
+- `src/core/buildGraph.ts`: proxy resolution and repeated-node filtering.
 - `src/core/gather.ts`: AST traversal and export/import inference edge cases.
 - `src/core/walk.ts`: path resolution behavior (relative imports, extensions).
 - Path resolution in `walk.ts`: small path/extension changes can silently exclude files.
@@ -74,8 +75,8 @@ When changing these files, prefer incremental edits, preserve existing behavior,
 
 ## Debugging
 
-- Verbose internal logging is toggled by `--debug` (see `src/utils.ts` and README troubleshooting).
-- For build/debug reproduction, run the same command with `--debug` and inspect generated JSON artifacts.
+- Reproduce with `yarn sample:gather` / `yarn target:gather` and inspect the generated JSON in `DUMP_DIR` (default `./assets`).
+- Graph node ids are paths relative to the shared parent dir of all walked files (`GatheredGraph.rootDir`); `sourceFileNameByGraphPath` maps them back.
 
 ## Documentation and Licensing
 

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import traverse, { Node, NodePath } from '@babel/traverse';
 import {
   CallExpression,
@@ -16,7 +17,6 @@ import {
   isVariableDeclarator,
 } from '@babel/types';
 
-import { excludePackagesPaths } from '../utils';
 import { walkFiles } from './walk';
 import type { GatheredModuleConnection, GatheredGraph, GatherOptions } from './types';
 
@@ -25,15 +25,38 @@ const { parseSync } = require('@babel/core') as {
   parseSync: (code: string, options: any) => any;
 };
 
+const toGraphPath = ({ fileName, rootDir }: { fileName: string; rootDir: string }) => {
+  const relativePath = path.relative(rootDir, fileName).split(path.sep).join('/');
+  return `/${relativePath}`;
+};
+
+// deepest directory that contains every given file
+export const getCommonParentDir = (fileNames: string[]) => {
+  if (!fileNames.length) {
+    return path.parse(process.cwd()).root;
+  }
+
+  const [first, ...rest] = fileNames.map((fileName) => path.dirname(fileName).split(path.sep));
+  let commonLength = first.length;
+
+  rest.forEach((segments) => {
+    let index = 0;
+    while (index < commonLength && index < segments.length && segments[index] === first[index]) {
+      index += 1;
+    }
+    commonLength = index;
+  });
+
+  return first.slice(0, commonLength).join(path.sep) || path.parse(fileNames[0]).root;
+};
+
 const gatherSingleFile = ({
   source,
   fileName,
-  packagesPaths,
   resolveImport,
 }: {
   source: string;
   fileName: string;
-  packagesPaths: RegExp;
   resolveImport: (importPath: string) => string | undefined;
 }) => {
   const varsWithJsx = new Set<string>();
@@ -43,15 +66,23 @@ const gatherSingleFile = ({
   const connections: GatheredModuleConnection[] = [];
   const resolvedImportsToTraverse: string[] = [];
 
-  const ast = parseSync(source, {
-    filename: fileName,
-    configFile: false,
-    babelrc: false,
-    parserOpts: {
-      sourceType: 'module',
-      plugins: ['jsx', 'typescript'],
-    },
-  });
+  // .ts files can't contain JSX, and `<Type>value` casts there break the jsx plugin
+  const isPlainTs = /\.[mc]?ts$/.test(fileName);
+  let ast;
+  try {
+    ast = parseSync(source, {
+      filename: fileName,
+      configFile: false,
+      babelrc: false,
+      parserOpts: {
+        sourceType: 'module',
+        plugins: isPlainTs ? ['typescript'] : ['jsx', 'typescript'],
+      },
+    });
+  } catch (error) {
+    console.warn(`Skipped ${fileName}: ${(error as Error).message.split('\n')[0]}`);
+    return { connectionIds, exportedIdsWithJsx, connections, resolvedImportsToTraverse };
+  }
 
   if (!ast) {
     return { connectionIds, exportedIdsWithJsx, connections, resolvedImportsToTraverse };
@@ -75,7 +106,6 @@ const gatherSingleFile = ({
         }
         resolvedImportsToTraverse.push(targetFileName);
 
-        const shortenedTargetFileName = excludePackagesPaths(targetFileName, packagesPaths);
         const connectionIdsByTarget: string[] = [];
 
         path.node.specifiers.forEach(({ type, ...rest }) => {
@@ -97,7 +127,7 @@ const gatherSingleFile = ({
 
         if (connectionIdsByTarget.length) {
           connections.push({
-            targetFileName: shortenedTargetFileName,
+            targetFileName,
             connectionIds: connectionIdsByTarget,
           });
         }
@@ -143,9 +173,7 @@ const gatherSingleFile = ({
           }
         };
 
-        const findWithinVarDeclaration = (
-          node: VariableDeclaration,
-        ): string | undefined => {
+        const findWithinVarDeclaration = (node: VariableDeclaration): string | undefined => {
           let name: string | undefined;
           name = checkIdentifier(node.declarations[0].id as Identifier);
           if (name) {
@@ -170,7 +198,9 @@ const gatherSingleFile = ({
           const name =
             checkIdentifier(firstArg as Identifier) ||
             (((firstArg as ClassExpression | undefined)?.id &&
-              checkIdentifier((firstArg as ClassExpression).id as Identifier)) as string | undefined);
+              checkIdentifier((firstArg as ClassExpression).id as Identifier)) as
+              | string
+              | undefined);
 
           if (name) {
             return name;
@@ -184,7 +214,10 @@ const gatherSingleFile = ({
             return name;
           }
 
-          if (isClassDeclaration(node.declaration) && (name = checkIdentifier(node.declaration.id))) {
+          if (
+            isClassDeclaration(node.declaration) &&
+            (name = checkIdentifier(node.declaration.id))
+          ) {
             return name;
           }
 
@@ -212,45 +245,56 @@ const gatherSingleFile = ({
   return { connectionIds, exportedIdsWithJsx, connections, resolvedImportsToTraverse };
 };
 
-export const gatherGraph = ({
-  entryFileName,
-  packagesPaths,
-  acceptableExts,
-}: GatherOptions): GatheredGraph => {
+export const gatherGraph = ({ entryFileName, acceptableExts }: GatherOptions): GatheredGraph => {
+  // collected with absolute paths first, shortened once all walked files are known
   const connectionIdsByFileName = new Map<string, string[]>();
   const exportedIdsWithJsxByFileName = new Map<string, string[]>();
   const connectionsByFileName = new Map<string, GatheredModuleConnection[]>();
+  const walkedFileNames: string[] = [];
 
   walkFiles({
     entryFileName,
-    packagesPaths,
     acceptableExts,
     onFile: ({ fileName, source, resolveImport }) => {
-      const shortenedFileName = excludePackagesPaths(fileName, packagesPaths);
+      walkedFileNames.push(fileName);
       const next = gatherSingleFile({
         source,
         fileName,
-        packagesPaths,
         resolveImport,
       });
 
       if (next.connectionIds.length) {
-        connectionIdsByFileName.set(shortenedFileName, next.connectionIds);
+        connectionIdsByFileName.set(fileName, next.connectionIds);
       }
       if (next.exportedIdsWithJsx.length) {
-        exportedIdsWithJsxByFileName.set(shortenedFileName, next.exportedIdsWithJsx);
+        exportedIdsWithJsxByFileName.set(fileName, next.exportedIdsWithJsx);
       }
       if (next.connections.length) {
-        connectionsByFileName.set(shortenedFileName, next.connections);
+        connectionsByFileName.set(fileName, next.connections);
       }
 
       return next.resolvedImportsToTraverse;
     },
   });
 
+  const rootDir = getCommonParentDir(walkedFileNames);
+  const shorten = (fileName: string) => toGraphPath({ fileName, rootDir });
+
+  const shortenKeys = <T>(map: Map<string, T>): Array<[string, T]> =>
+    [...map.entries()].map(([fileName, value]) => [shorten(fileName), value]);
+
   return {
-    connectionIdsByFileName: [...connectionIdsByFileName.entries()],
-    exportedIdsWithJsxByFileName: [...exportedIdsWithJsxByFileName.entries()],
-    connectionsByFileName: [...connectionsByFileName.entries()],
+    connectionIdsByFileName: shortenKeys(connectionIdsByFileName),
+    exportedIdsWithJsxByFileName: shortenKeys(exportedIdsWithJsxByFileName),
+    connectionsByFileName: shortenKeys(connectionsByFileName).map(([fileName, connections]) => [
+      fileName,
+      connections.map((connection) => ({
+        ...connection,
+        targetFileName: shorten(connection.targetFileName),
+      })),
+    ]),
+    sourceFileNameByGraphPath: walkedFileNames.map((fileName) => [shorten(fileName), fileName]),
+    rootDir,
+    entryGraphPath: walkedFileNames.length ? shorten(walkedFileNames[0]) : undefined,
   };
 };

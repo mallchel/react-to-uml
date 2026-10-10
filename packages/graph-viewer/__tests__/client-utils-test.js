@@ -7,10 +7,26 @@ import {
   computePackageLayout,
   getHighLevelNodeIds,
   getFilteredGraphData,
+  getGraphDataPaths,
+  getGraphNodeMetaPaths,
   NODE_HEIGHT,
   NODE_CHAR_WIDTH_ESTIMATE,
   NODE_HORIZONTAL_PADDING,
 } from '../client-utils.js';
+
+describe('graph JSON path resolution', () => {
+  it('returns default graph data JSON candidates', () => {
+    const paths = getGraphDataPaths();
+    assert.ok(paths.includes('./treeComponentsGraph.json'));
+    assert.ok(paths.includes('/treeComponentsGraph.json'));
+  });
+
+  it('returns default node meta JSON candidates', () => {
+    const paths = getGraphNodeMetaPaths();
+    assert.ok(paths.includes('./graphNodeMetaByFileName.json'));
+    assert.ok(paths.includes('/graphNodeMetaByFileName.json'));
+  });
+});
 
 // ---------------------------------------------------------------------------
 // estimateNodeWidth
@@ -594,5 +610,96 @@ describe('computePackageLayout', () => {
     const dy1 = result1.slotsByNodeId.get('B').y - result1.slotsByNodeId.get('A').y;
     const dy2 = result2.slotsByNodeId.get('B').y - result2.slotsByNodeId.get('A').y;
     assert.ok(dy2 > dy1, 'larger spacing factor should produce larger vertical gap');
+  });
+
+  it('stacks package groups top-to-bottom when hierarchyDirection is TB', () => {
+    const nodes = [
+      ...makeNodes(['Entry'], 'pkg-entry'),
+      ...makeNodes(['Child'], 'pkg-child'),
+    ];
+    const depthById = new Map([
+      ['Entry', 0],
+      ['Child', 1],
+    ]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'Entry',
+      hierarchyDirection: 'TB',
+    });
+    const entryGroup = result.groupsByPackage.get('pkg-entry');
+    const childGroup = result.groupsByPackage.get('pkg-child');
+    assert.ok(entryGroup.y < childGroup.y, 'entry group should be above child group');
+  });
+
+  it('keeps package groups in one centered column when hierarchyDirection is TB', () => {
+    const nodes = [
+      ...makeNodes(['A'], 'pkg-a'),
+      ...makeNodes(['B'], 'pkg-b'),
+    ];
+    const depthById = new Map([
+      ['A', 0],
+      ['B', 0],
+    ]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'A',
+      hierarchyDirection: 'TB',
+    });
+    const groupA = result.groupsByPackage.get('pkg-a');
+    const groupB = result.groupsByPackage.get('pkg-b');
+    assert.equal(groupA.x, groupB.x, 'groups should share the same x position');
+  });
+
+  it('orders groups by import order after the entry group', () => {
+    const nodes = [
+      ...makeNodes(['Entry'], 'pkg-entry'),
+      ...makeNodes(['Small'], 'pkg-small'),
+      ...makeNodes(['Big1', 'Big2', 'Big3'], 'pkg-big'),
+    ];
+    const depthById = new Map([
+      ['Entry', 0],
+      ['Small', 2],
+      ['Big1', 1],
+      ['Big2', 1],
+      ['Big3', 1],
+    ]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'Entry',
+      hierarchyDirection: 'TB',
+    });
+    const order = [...result.groupsByPackage.values()]
+      .sort((a, b) => a.y - b.y)
+      .map((group) => group.packageName);
+    assert.deepEqual(order, ['pkg-entry', 'pkg-small', 'pkg-big']);
+  });
+
+  it('centers groups of different widths on one axis when hierarchyDirection is TB', () => {
+    const wideIds = Array.from({ length: 30 }, (_, index) => `Wide${index}`);
+    const nodes = [...makeNodes(['A'], 'pkg-a'), ...makeNodes(wideIds, 'pkg-wide')];
+    const depthById = new Map([['A', 0], ...wideIds.map((id) => [id, 1])]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'A',
+      hierarchyDirection: 'TB',
+    });
+    const groupA = result.groupsByPackage.get('pkg-a');
+    const groupWide = result.groupsByPackage.get('pkg-wide');
+    assert.ok(groupWide.width > 960, 'wide group should be wider than the viewport');
+    assert.equal(groupA.centerX, groupWide.centerX);
+    assert.equal(groupA.centerX, result.centerAxisX);
+    assert.ok(groupWide.x >= 0, 'wide group should not start off-canvas');
   });
 });

@@ -6,19 +6,24 @@ export const debugLog = (...args: any[]) => {
 
 export const getIsAcceptableModule = ({
   filename,
-  packagesPaths,
   acceptableExts = ['jsx', 'js', 'tsx', 'ts'],
 }: {
   filename: string;
-  packagesPaths: RegExp;
   acceptableExts?: string[];
 }) => {
-  return (
-    packagesPaths.test(filename) &&
-    acceptableExts.some((acceptableExt) => {
-      return filename.endsWith(`.${acceptableExt}`);
-    })
-  );
+  const normalizedFileName = filename.replace(/\\/g, '/');
+
+  if (normalizedFileName.includes('/node_modules/')) {
+    return false;
+  }
+
+  if (/\.d\.(ts|tsx|mts|cts)$/i.test(filename)) {
+    return false;
+  }
+
+  return acceptableExts.some((acceptableExt) => {
+    return filename.endsWith(`.${acceptableExt}`);
+  });
 };
 
 export const ensureArrExistence = <T>(map: Map<string, T[]>, key: string) => {
@@ -51,6 +56,3 @@ export const createArray = (obj: Record<string, unknown>, key: string) => {
   }
 };
 
-export const excludePackagesPaths = (fileName = '', packagesPaths: RegExp) => {
-  return fileName.replace(packagesPaths, '');
-};

@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { runFromEnv } from './index';
+import { startViewer } from './serve';
 
 const applyDotEnv = () => {
   const envFilePath = path.resolve(process.cwd(), '.env');
@@ -31,5 +32,40 @@ const applyDotEnv = () => {
   });
 };
 
+const parseArgs = () => {
+  const args = process.argv.slice(2);
+  let isServe = false;
+  let port = Number(process.env.PORT) || 8207;
+
+  for (const arg of args) {
+    // --run-graph is kept as an alias of --serve
+    if (arg === '--serve' || arg === '--run-graph') {
+      isServe = true;
+
+      continue;
+    }
+
+    if (arg.startsWith('--port=')) {
+      const parsed = parseInt(arg.slice('--port='.length), 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        port = parsed;
+      }
+    }
+  }
+
+  return { isServe, port };
+};
+
 applyDotEnv();
-runFromEnv();
+
+const { isServe, port } = parseArgs();
+const { outputDir } = runFromEnv();
+
+if (isServe) {
+  const repetitionLimit = Number(process.env.REPETITIVE_COUNT_FOR_REMOVE_FROM_TREE);
+  startViewer({
+    port,
+    dumpDir: outputDir,
+    viewerConfig: repetitionLimit > 0 ? { repetitionLimit } : {},
+  });
+}

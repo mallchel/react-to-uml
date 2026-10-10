@@ -154,12 +154,18 @@ export const buildGraphFromGraph = ({
   graph,
   entryFileName,
   outFileName,
-  isGroupByParentDirNeeded = false,
   repetitiveCountForRemoveFromTree = 4,
 }: BuildOptions) => {
   const connectionsByFileName = new Map(graph.connectionsByFileName);
   const exportedIdsWithJsxByFileName = new Map(graph.exportedIdsWithJsxByFileName);
   const sourceFileNameByGraphPath = new Map(graph.sourceFileNameByGraphPath ?? []);
+  // graph keys are shortened paths, so map the filesystem entry onto its graph path
+  const entryGraphPath =
+    graph.entryGraphPath ??
+    [...sourceFileNameByGraphPath.entries()].find(
+      ([, sourceFileName]) => sourceFileName === entryFileName,
+    )?.[0] ??
+    entryFileName;
   const filesWithJsxExports = new Set(exportedIdsWithJsxByFileName.keys());
   const proxyPathsWithJsx = new Map<string, Map<string, string>>();
   const treeComponentsGraphAll = new Map<string, string[]>();
@@ -191,7 +197,7 @@ export const buildGraphFromGraph = ({
 
   const treeComponentsGraph = new Map<string, string[]>();
   treeComponentsGraphAll.forEach((targets, fileName) => {
-    const shouldIncludeFile = filesWithJsxExports.has(fileName) || fileName === entryFileName;
+    const shouldIncludeFile = filesWithJsxExports.has(fileName) || fileName === entryGraphPath;
     if (!shouldIncludeFile) {
       return;
     }
@@ -200,9 +206,9 @@ export const buildGraphFromGraph = ({
       targets.filter((targetFileName) => filesWithJsxExports.has(targetFileName)),
     );
   });
-  const effectiveRootFileName = treeComponentsGraph.has(entryFileName)
-    ? entryFileName
-    : ((treeComponentsGraph.keys().next().value as string | undefined) ?? entryFileName);
+  const effectiveRootFileName = treeComponentsGraph.has(entryGraphPath)
+    ? entryGraphPath
+    : ((treeComponentsGraph.keys().next().value as string | undefined) ?? entryGraphPath);
 
   const usedUserRequests = calcUsedUserRequests({
     treeComponentsGraph,

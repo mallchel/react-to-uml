@@ -6,18 +6,14 @@ import {
   ensureArrExistence,
   ensureMapExistence,
   ensureObjExistence,
-  excludePackagesPaths,
   getIsAcceptableModule,
 } from '../utils';
 
 describe('utils', () => {
-  test('getIsAcceptableModule checks package path and extensions', () => {
-    const packagesPaths = /\/packages\//;
-
+  test('getIsAcceptableModule checks extensions', () => {
     assert.equal(
       getIsAcceptableModule({
         filename: '/repo/packages/app/src/App.tsx',
-        packagesPaths,
       }),
       true,
     );
@@ -25,7 +21,6 @@ describe('utils', () => {
     assert.equal(
       getIsAcceptableModule({
         filename: '/repo/packages/app/src/App.css',
-        packagesPaths,
       }),
       false,
     );
@@ -33,26 +28,31 @@ describe('utils', () => {
     assert.equal(
       getIsAcceptableModule({
         filename: '/repo/src/App.tsx',
-        packagesPaths,
+      }),
+      true,
+    );
+
+    assert.equal(
+      getIsAcceptableModule({
+        filename: '/repo/packages/app/src/App.tsx',
+        acceptableExts: ['js'],
       }),
       false,
     );
 
     assert.equal(
       getIsAcceptableModule({
-        filename: '/repo/packages/app/src/App.tsx',
-        packagesPaths,
-        acceptableExts: ['js'],
+        filename: '/repo/node_modules/pdfjs-dist-next/types/src/display/api.d.ts',
       }),
       false,
     );
-  });
 
-  test('excludePackagesPaths removes the matched package prefix', () => {
-    const fileName = '/repo/packages/app/src/App.tsx';
-    const packagesPaths = /\/repo\/packages/;
-
-    assert.equal(excludePackagesPaths(fileName, packagesPaths), '/app/src/App.tsx');
+    assert.equal(
+      getIsAcceptableModule({
+        filename: '/repo/node_modules/some-lib/src/Widget.tsx',
+      }),
+      false,
+    );
   });
 
   test('ensure and create helpers initialize values only once', () => {
