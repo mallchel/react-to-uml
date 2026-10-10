@@ -1,6 +1,0 @@
-{
-  "watch": ["./**/*"],
-  "ext": "ts,tsx,json,js",
-  "ignore": ["./build"],
-  "exec": "yarn build"
-}

@@ -111,6 +111,7 @@ const GraphCanvas = ({
       spacingFactor,
       depthById: hierarchy.depthById,
       entryId: renderData.entryId,
+      hierarchyDirection: layoutMode === 'grouped' ? 'TB' : hierarchyDirection,
     });
     const maxDepth = Math.max(0, ...hierarchy.depthById.values());
     const verticalPadding = 70;
@@ -224,6 +225,16 @@ const GraphCanvas = ({
 
     if (layoutMode === 'grouped') {
       const groupItems = [...packageLayout.groupsByPackage.values()];
+      // start with the groups' center axis in the middle of the viewport, zoomed out to fit the widest group
+      const maxGroupWidth = Math.max(0, ...groupItems.map((group) => group.width));
+      const [minScale, maxScale] = zoom.scaleExtent();
+      const initialScale = Math.min(maxScale, 1, Math.max(minScale, width / (maxGroupWidth + 48)));
+      svg.call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(width / 2 - packageLayout.centerAxisX * initialScale, 0)
+          .scale(initialScale),
+      );
       groupsLayer
         .selectAll('rect')
         .data(groupItems)
@@ -386,7 +397,8 @@ const GraphCanvas = ({
   }, [hierarchyDirection, layoutMode, matchedIds, omitBySearch, renderData, spacingFactor]);
 
   return (
-    <svg ref={svgRef} style={{ width: '100%', height: 'calc(100vh - 68px)', display: 'block' }} />
+    // fills the space left under the toolbar, which may wrap to several rows
+    <svg ref={svgRef} style={{ width: '100%', flex: '1 1 auto', minHeight: 0, display: 'block' }} />
   );
 };
 
@@ -446,13 +458,25 @@ const App = () => {
           nodeMeta = {};
         }
 
+        try {
+          // served by the CLI (src/serve.ts); missing in dev mode
+          const viewerConfig = await loadJson(['./viewer-config.json']);
+          if (isMounted && viewerConfig.repetitionLimit > 0) {
+            setLowLevelRepetitionLimit(viewerConfig.repetitionLimit);
+          }
+        } catch {
+          // keep defaults
+        }
+
         if (isMounted) {
           setGraph(normalizeGraph(rawTree, nodeMeta));
           setError('');
         }
       } catch (nextError) {
         if (isMounted) {
-          setError(`Cannot load graph data.\n${String(nextError?.message ?? nextError)}`);
+          setError(
+            `Cannot load graph data. Run react-to-uml in this repo first so JSON files are generated in CWD.\n${String(nextError?.message ?? nextError)}`,
+          );
         }
       }
     };
@@ -467,8 +491,10 @@ const App = () => {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
         background:
           'radial-gradient(1300px 820px at 0% 0%, rgba(39,57,126,0.85) 0%, rgba(12,17,36,1) 50%, rgba(5,8,19,1) 100%)',
         color: '#d8e1ff',
@@ -480,6 +506,7 @@ const App = () => {
       <div
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           gap: 12,
           padding: '10px 14px',
@@ -507,8 +534,8 @@ const App = () => {
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder='Search node path...'
           style={{
-            minWidth: 280,
-            width: '42vw',
+            flex: '1 1 200px',
+            minWidth: 160,
             maxWidth: 560,
             border: '1px solid rgba(142,160,211,0.35)',
             background: 'rgba(7,11,24,0.82)',
@@ -607,7 +634,7 @@ const App = () => {
             <input
               type='range'
               min={1}
-              max={12}
+              max={Math.max(12, lowLevelRepetitionLimit)}
               step={1}
               value={lowLevelRepetitionLimit}
               onChange={(event) => setLowLevelRepetitionLimit(Number(event.target.value))}
@@ -639,7 +666,7 @@ const App = () => {
         <div style={{ padding: 16, color: '#ff9ea5', fontFamily: 'monospace' }}>
           {error}
           <div style={{ marginTop: 8, color: '#8ea0d3' }}>
-            Run gather/build first: <code>yarn run-graph</code>
+            Run gather/build first: <code>ENTRY=./src/main.tsx npx react-to-uml --serve</code>
           </div>
         </div>
       ) : (

@@ -17,11 +17,12 @@ export default defineConfig({
       root: path.resolve(process.cwd(), 'lib/graph-viewer'),
     },
   },
-  // Graph JSON assets are produced by the CLI gather step in the user's CWD
-  // and are served by src/serve.ts at runtime.
+  // Graph JSON files are produced by the CLI and served by src/serve.ts at runtime.
+  // In dev mode they are read from DUMP_DIR (default ./assets).
   server: {
     publicDir: [
       { name: path.resolve(process.cwd(), 'public') },
+      { name: path.resolve(process.cwd(), process.env.DUMP_DIR ?? 'assets'), copyOnBuild: false },
     ],
   },
   dev: {

@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import resolve from 'resolve';
 
 import { getIsAcceptableModule } from '../utils';
 
@@ -12,28 +13,49 @@ const resolveImportPath = ({
   fromFileName: string;
   acceptableExts: string[];
 }) => {
-  if (!importPath.startsWith('.')) {
-    return undefined;
+  const getAcceptedFileName = (candidateFileName: string) => {
+    if (!existsSync(candidateFileName)) {
+      return undefined;
+    }
+    // real paths keep symlinked and relative imports of the same file under one key
+    const realFileName = realpathSync(candidateFileName);
+    return getIsAcceptableModule({ filename: realFileName, acceptableExts })
+      ? realFileName
+      : undefined;
+  };
+
+  if (!importPath.startsWith('.') && !path.isAbsolute(importPath)) {
+    try {
+      const resolved = resolve.sync(importPath, {
+        basedir: path.dirname(fromFileName),
+        extensions: acceptableExts.map((ext) => `.${ext}`),
+        preserveSymlinks: false,
+      });
+      return getAcceptedFileName(resolved);
+    } catch {
+      return undefined;
+    }
   }
 
   const basePath = path.resolve(path.dirname(fromFileName), importPath);
-  const ext = path.extname(basePath).replace('.', '');
-
-  if (ext && acceptableExts.includes(ext) && existsSync(basePath)) {
-    return basePath;
+  const directFileName = getAcceptedFileName(basePath);
+  if (directFileName) {
+    return directFileName;
   }
 
   for (const acceptableExt of acceptableExts) {
     const filePath = `${basePath}.${acceptableExt}`;
-    if (existsSync(filePath)) {
-      return filePath;
+    const nextFileName = getAcceptedFileName(filePath);
+    if (nextFileName) {
+      return nextFileName;
     }
   }
 
   for (const acceptableExt of acceptableExts) {
     const indexFilePath = path.join(basePath, `index.${acceptableExt}`);
-    if (existsSync(indexFilePath)) {
-      return indexFilePath;
+    const nextFileName = getAcceptedFileName(indexFilePath);
+    if (nextFileName) {
+      return nextFileName;
     }
   }
 
@@ -42,12 +64,10 @@ const resolveImportPath = ({
 
 export const walkFiles = ({
   entryFileName,
-  packagesPaths,
   acceptableExts = ['jsx', 'js', 'tsx', 'ts'],
   onFile,
 }: {
   entryFileName: string;
-  packagesPaths: RegExp;
   acceptableExts?: string[];
   onFile: (params: {
     fileName: string;
@@ -55,7 +75,7 @@ export const walkFiles = ({
     resolveImport: (importPath: string) => string | undefined;
   }) => string[];
 }) => {
-  const queue = [entryFileName];
+  const queue = [existsSync(entryFileName) ? realpathSync(entryFileName) : entryFileName];
   const visited = new Set<string>();
 
   while (queue.length) {
@@ -69,7 +89,7 @@ export const walkFiles = ({
       continue;
     }
 
-    if (!getIsAcceptableModule({ filename: fileName, packagesPaths, acceptableExts })) {
+    if (!getIsAcceptableModule({ filename: fileName, acceptableExts })) {
       continue;
     }
 
@@ -77,26 +97,12 @@ export const walkFiles = ({
     const resolvedImports = onFile({
       fileName,
       source,
-      resolveImport: (importPath: string) => {
-        const resolved = resolveImportPath({
+      resolveImport: (importPath: string) =>
+        resolveImportPath({
           importPath,
           fromFileName: fileName,
           acceptableExts,
-        });
-
-        if (
-          resolved &&
-          getIsAcceptableModule({
-            filename: resolved,
-            packagesPaths,
-            acceptableExts,
-          })
-        ) {
-          return resolved;
-        }
-
-        return undefined;
-      },
+        }),
     });
 
     resolvedImports.forEach((resolvedImport) => {

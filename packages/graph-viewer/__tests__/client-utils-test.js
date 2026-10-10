@@ -7,10 +7,26 @@ import {
   computePackageLayout,
   getHighLevelNodeIds,
   getFilteredGraphData,
+  getGraphDataPaths,
+  getGraphNodeMetaPaths,
   NODE_HEIGHT,
   NODE_CHAR_WIDTH_ESTIMATE,
   NODE_HORIZONTAL_PADDING,
 } from '../client-utils.js';
+
+describe('graph JSON path resolution', () => {
+  it('returns default graph data JSON candidates', () => {
+    const paths = getGraphDataPaths();
+    assert.ok(paths.includes('./treeComponentsGraph.json'));
+    assert.ok(paths.includes('/treeComponentsGraph.json'));
+  });
+
+  it('returns default node meta JSON candidates', () => {
+    const paths = getGraphNodeMetaPaths();
+    assert.ok(paths.includes('./graphNodeMetaByFileName.json'));
+    assert.ok(paths.includes('/graphNodeMetaByFileName.json'));
+  });
+});
 
 // ---------------------------------------------------------------------------
 // estimateNodeWidth
@@ -311,6 +327,39 @@ describe('getHighLevelNodeIds', () => {
     const result = getHighLevelNodeIds({ data, repetitionLimit: 4 });
     assert.ok(result.has('X'));
   });
+
+  it('handles cycles', () => {
+    const data = {
+      entryId: 'A',
+      nodes: [{ id: 'A' }, { id: 'B' }, { id: 'C' }],
+      links: [
+        { source: 'A', target: 'B' },
+        { source: 'B', target: 'C' },
+        { source: 'C', target: 'B' },
+      ],
+    };
+    const result = getHighLevelNodeIds({ data, repetitionLimit: 4 });
+    assert.deepEqual([...result].sort(), ['A', 'B', 'C']);
+  });
+
+  it('stays fast on graphs with exponentially many paths', () => {
+    // 30 fully connected layers of 3 nodes: 3^30 paths from the root
+    const layers = Array.from({ length: 30 }, (_, layer) => [0, 1, 2].map((i) => `L${layer}-${i}`));
+    const nodes = [{ id: 'root' }, ...layers.flat().map((id) => ({ id }))];
+    const links = [
+      ...layers[0].map((target) => ({ source: 'root', target })),
+      ...layers.slice(1).flatMap((layer, index) =>
+        layers[index].flatMap((source) => layer.map((target) => ({ source, target }))),
+      ),
+    ];
+    const startedAt = Date.now();
+    const result = getHighLevelNodeIds({ data: { entryId: 'root', nodes, links }, repetitionLimit: 4 });
+    assert.ok(Date.now() - startedAt < 1000);
+    // layer 0 nodes are reached once, layer 1 three times, layer 2 nine times
+    assert.ok(result.has('L0-0'));
+    assert.ok(result.has('L1-0'));
+    assert.equal(result.has('L2-0'), false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -594,5 +643,96 @@ describe('computePackageLayout', () => {
     const dy1 = result1.slotsByNodeId.get('B').y - result1.slotsByNodeId.get('A').y;
     const dy2 = result2.slotsByNodeId.get('B').y - result2.slotsByNodeId.get('A').y;
     assert.ok(dy2 > dy1, 'larger spacing factor should produce larger vertical gap');
+  });
+
+  it('stacks package groups top-to-bottom when hierarchyDirection is TB', () => {
+    const nodes = [
+      ...makeNodes(['Entry'], 'pkg-entry'),
+      ...makeNodes(['Child'], 'pkg-child'),
+    ];
+    const depthById = new Map([
+      ['Entry', 0],
+      ['Child', 1],
+    ]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'Entry',
+      hierarchyDirection: 'TB',
+    });
+    const entryGroup = result.groupsByPackage.get('pkg-entry');
+    const childGroup = result.groupsByPackage.get('pkg-child');
+    assert.ok(entryGroup.y < childGroup.y, 'entry group should be above child group');
+  });
+
+  it('keeps package groups in one centered column when hierarchyDirection is TB', () => {
+    const nodes = [
+      ...makeNodes(['A'], 'pkg-a'),
+      ...makeNodes(['B'], 'pkg-b'),
+    ];
+    const depthById = new Map([
+      ['A', 0],
+      ['B', 0],
+    ]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'A',
+      hierarchyDirection: 'TB',
+    });
+    const groupA = result.groupsByPackage.get('pkg-a');
+    const groupB = result.groupsByPackage.get('pkg-b');
+    assert.equal(groupA.x, groupB.x, 'groups should share the same x position');
+  });
+
+  it('orders groups by import order after the entry group', () => {
+    const nodes = [
+      ...makeNodes(['Entry'], 'pkg-entry'),
+      ...makeNodes(['Small'], 'pkg-small'),
+      ...makeNodes(['Big1', 'Big2', 'Big3'], 'pkg-big'),
+    ];
+    const depthById = new Map([
+      ['Entry', 0],
+      ['Small', 2],
+      ['Big1', 1],
+      ['Big2', 1],
+      ['Big3', 1],
+    ]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'Entry',
+      hierarchyDirection: 'TB',
+    });
+    const order = [...result.groupsByPackage.values()]
+      .sort((a, b) => a.y - b.y)
+      .map((group) => group.packageName);
+    assert.deepEqual(order, ['pkg-entry', 'pkg-small', 'pkg-big']);
+  });
+
+  it('centers groups of different widths on one axis when hierarchyDirection is TB', () => {
+    const wideIds = Array.from({ length: 30 }, (_, index) => `Wide${index}`);
+    const nodes = [...makeNodes(['A'], 'pkg-a'), ...makeNodes(wideIds, 'pkg-wide')];
+    const depthById = new Map([['A', 0], ...wideIds.map((id) => [id, 1])]);
+    const result = computePackageLayout({
+      nodes,
+      width: 960,
+      spacingFactor: 1,
+      depthById,
+      entryId: 'A',
+      hierarchyDirection: 'TB',
+    });
+    const groupA = result.groupsByPackage.get('pkg-a');
+    const groupWide = result.groupsByPackage.get('pkg-wide');
+    assert.ok(groupWide.width > 960, 'wide group should be wider than the viewport');
+    assert.equal(groupA.centerX, groupWide.centerX);
+    assert.equal(groupA.centerX, result.centerAxisX);
+    assert.ok(groupWide.x >= 0, 'wide group should not start off-canvas');
   });
 });

@@ -14,8 +14,42 @@ export const NODE_STROKE_DEFAULT = '#dbe5ff';
 export const NODE_LABEL_COLOR = '#ffffff';
 export const NODE_LABEL_STROKE = 'rgba(6, 10, 24, 0.95)';
 
-export const graphDataPaths = ['./treeComponentsGraph.json'];
-export const graphNodeMetaPaths = ['./graphNodeMetaByFileName.json'];
+const DEFAULT_GRAPH_FILE = 'treeComponentsGraph.json';
+const DEFAULT_NODE_META_FILE = 'graphNodeMetaByFileName.json';
+
+const getQueryParam = (key) => {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  try {
+    return new URLSearchParams(window.location.search).get(key) ?? '';
+  } catch {
+    return '';
+  }
+};
+
+const buildJsonPathCandidates = (fileName) => {
+  const normalized = String(fileName || '').replace(/^\/+/, '');
+  if (!normalized) {
+    return [];
+  }
+
+  const baseName = normalized.split('/').slice(-1)[0];
+  return [...new Set([`./${normalized}`, `/${normalized}`, `./${baseName}`, `/${baseName}`])];
+};
+
+export const getGraphDataPaths = () => {
+  const configured = getQueryParam('graph');
+  return buildJsonPathCandidates(configured || DEFAULT_GRAPH_FILE);
+};
+
+export const getGraphNodeMetaPaths = () => {
+  const configured = getQueryParam('meta');
+  return buildJsonPathCandidates(configured || DEFAULT_NODE_META_FILE);
+};
+
+export const graphDataPaths = getGraphDataPaths();
+export const graphNodeMetaPaths = getGraphNodeMetaPaths();
 
 export const estimateNodeWidth = (label) => {
   const textWidth = label.length * NODE_CHAR_WIDTH_ESTIMATE;
@@ -46,13 +80,21 @@ export const normalizeGraph = (rawTree = [], nodeMetaByFileName = {}) => {
   return { nodes, links, entryId };
 };
 
-export const computePackageLayout = ({ nodes, width, spacingFactor, depthById, entryId }) => {
+export const computePackageLayout = ({
+  nodes,
+  width,
+  spacingFactor,
+  depthById,
+  entryId,
+  hierarchyDirection = 'LR',
+}) => {
   const groupsByPackage = new Map();
   const slotsByNodeId = new Map();
   const nodesByPackage = new Map();
   const nodeGapX = 16 * spacingFactor;
   const levelGapY = 22 * spacingFactor;
   const groupGapX = 38 * spacingFactor;
+  const groupGapY = 26 * spacingFactor;
   const groupPadding = GROUP_OUTER_PADDING * spacingFactor;
   const edgePaddingX = 24;
   const edgePaddingY = 16;
@@ -100,23 +142,36 @@ export const computePackageLayout = ({ nodes, width, spacingFactor, depthById, e
     };
   });
 
+  // nodes come in import order (BFS from the entry), so a group's first node index is its import order
+  const firstNodeIndexByPackage = new Map();
+  nodes.forEach((node, index) => {
+    if (!firstNodeIndexByPackage.has(node.packageName)) {
+      firstNodeIndexByPackage.set(node.packageName, index);
+    }
+  });
   const orderedPackageMetrics = packageMetrics.sort((a, b) => {
     if (a.hasEntry !== b.hasEntry) {
       return a.hasEntry ? -1 : 1;
     }
-    if (a.minDepth !== b.minDepth) {
-      return a.minDepth - b.minDepth;
-    }
-    if (a.packageNodes.length !== b.packageNodes.length) {
-      return b.packageNodes.length - a.packageNodes.length;
-    }
-    return a.packageName.localeCompare(b.packageName);
+    return firstNodeIndexByPackage.get(a.packageName) - firstNodeIndexByPackage.get(b.packageName);
   });
 
   const totalRowWidth =
     orderedPackageMetrics.reduce((acc, metric) => acc + metric.groupWidth, 0) +
     Math.max(0, orderedPackageMetrics.length - 1) * groupGapX;
+  const groupHeightByDirection = sharedGroupHeight;
+  const totalColumnHeight =
+    orderedPackageMetrics.length * groupHeightByDirection +
+    Math.max(0, orderedPackageMetrics.length - 1) * groupGapY;
+  const maxGroupWidth = Math.max(0, ...orderedPackageMetrics.map((metric) => metric.groupWidth));
+  // TB: every group is centered on one vertical axis, wide enough for the widest group
+  const centerAxisX = Math.max(width, maxGroupWidth + edgePaddingX * 2) / 2;
   let cursorX = Math.max(edgePaddingX, (width - totalRowWidth) / 2);
+  let cursorY = edgePaddingY;
+  if (hierarchyDirection === 'TB') {
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : totalColumnHeight;
+    cursorY = Math.max(edgePaddingY, (viewportHeight - totalColumnHeight) / 2);
+  }
 
   orderedPackageMetrics.forEach((metric) => {
     const packageNodes = metric.packageNodes
@@ -133,15 +188,17 @@ export const computePackageLayout = ({ nodes, width, spacingFactor, depthById, e
         return a.label.localeCompare(b.label);
       });
 
+    const groupX = hierarchyDirection === 'TB' ? centerAxisX - metric.groupWidth / 2 : cursorX;
+    const groupY = hierarchyDirection === 'TB' ? cursorY : edgePaddingY;
     groupsByPackage.set(metric.packageName, {
       packageName: metric.packageName,
       nodeCount: packageNodes.length,
-      x: cursorX,
-      y: edgePaddingY,
+      x: groupX,
+      y: groupY,
       width: metric.groupWidth,
       height: sharedGroupHeight,
-      centerX: cursorX + metric.groupWidth / 2,
-      centerY: edgePaddingY + sharedGroupHeight / 2,
+      centerX: groupX + metric.groupWidth / 2,
+      centerY: groupY + sharedGroupHeight / 2,
     });
 
     metric.nodesAtDepth.forEach((depthNodes, depth) => {
@@ -156,8 +213,8 @@ export const computePackageLayout = ({ nodes, width, spacingFactor, depthById, e
       const depthRowWidth =
         sortedDepthNodes.length * metric.maxNodeWidth +
         (sortedDepthNodes.length - 1) * nodeGapX;
-      const rowStartX = cursorX + groupPadding + (metric.innerWidth - depthRowWidth) / 2;
-      const rowY = depthContentTopY + depth * depthRowStep;
+      const rowStartX = groupX + groupPadding + (metric.innerWidth - depthRowWidth) / 2;
+      const rowY = groupY + depthContentTopY + depth * depthRowStep;
 
       sortedDepthNodes.forEach((node, index) => {
         const cellX = rowStartX + index * (metric.maxNodeWidth + nodeGapX);
@@ -168,10 +225,14 @@ export const computePackageLayout = ({ nodes, width, spacingFactor, depthById, e
       });
     });
 
-    cursorX += metric.groupWidth + groupGapX;
+    if (hierarchyDirection === 'TB') {
+      cursorY += sharedGroupHeight + groupGapY;
+    } else {
+      cursorX += metric.groupWidth + groupGapX;
+    }
   });
 
-  return { groupsByPackage, slotsByNodeId };
+  return { groupsByPackage, slotsByNodeId, centerAxisX };
 };
 
 export const computeHierarchy = (data) => {
@@ -266,40 +327,54 @@ export const getHighLevelNodeIds = ({ data, repetitionLimit }) => {
     return new Set();
   }
 
+  // counts how many times each node is reached when the tree is expanded from the root
+  // (cycles are cut per branch). Counting stops once a node passes the limit: everything
+  // below it would pass the limit too, so it is marked at once. Walking every path instead
+  // explodes on large graphs and freezes the page.
   const counterPerFile = new Map();
+  const overLimit = new Set();
+  const branch = new Set([rootId]);
+
+  const markOverLimit = (id) => {
+    const queue = [id];
+    while (queue.length) {
+      const next = queue.pop();
+      if (overLimit.has(next)) {
+        continue;
+      }
+      overLimit.add(next);
+      queue.push(...(connectionsBySource.get(next) ?? []));
+    }
+  };
+
+  const countConnections = (fromId) => {
+    (connectionsBySource.get(fromId) ?? []).forEach((targetId) => {
+      if (overLimit.has(targetId)) {
+        return;
+      }
+      const count = (counterPerFile.get(targetId) ?? 0) + 1;
+      counterPerFile.set(targetId, count);
+      if (count > repetitionLimit) {
+        markOverLimit(targetId);
+        return;
+      }
+      if (branch.has(targetId)) {
+        return;
+      }
+      branch.add(targetId);
+      countConnections(targetId);
+      branch.delete(targetId);
+    });
+  };
+
+  countConnections(rootId);
+
   const usedIds = new Set([rootId]);
-
-  const countConnections = (fromId, branchSeen = new Set()) => {
-    const nextTargets = connectionsBySource.get(fromId) ?? [];
-    nextTargets.forEach((targetId) => {
-      counterPerFile.set(targetId, (counterPerFile.get(targetId) ?? 0) + 1);
-      if (branchSeen.has(targetId)) {
-        return;
-      }
-      const nextBranchSeen = new Set(branchSeen);
-      nextBranchSeen.add(targetId);
-      countConnections(targetId, nextBranchSeen);
-    });
-  };
-
-  const saveUsed = (fromId, branchSeen = new Set()) => {
-    const nextTargets = connectionsBySource.get(fromId) ?? [];
-    nextTargets.forEach((targetId) => {
-      const count = counterPerFile.get(targetId) ?? 0;
-      if (count > 0 && count <= repetitionLimit) {
-        usedIds.add(targetId);
-      }
-      if (branchSeen.has(targetId)) {
-        return;
-      }
-      const nextBranchSeen = new Set(branchSeen);
-      nextBranchSeen.add(targetId);
-      saveUsed(targetId, nextBranchSeen);
-    });
-  };
-
-  countConnections(rootId, new Set([rootId]));
-  saveUsed(rootId, new Set([rootId]));
+  counterPerFile.forEach((count, id) => {
+    if (!overLimit.has(id) && count <= repetitionLimit) {
+      usedIds.add(id);
+    }
+  });
 
   return usedIds;
 };
