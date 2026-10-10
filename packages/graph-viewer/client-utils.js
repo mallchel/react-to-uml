@@ -327,40 +327,54 @@ export const getHighLevelNodeIds = ({ data, repetitionLimit }) => {
     return new Set();
   }
 
+  // counts how many times each node is reached when the tree is expanded from the root
+  // (cycles are cut per branch). Counting stops once a node passes the limit: everything
+  // below it would pass the limit too, so it is marked at once. Walking every path instead
+  // explodes on large graphs and freezes the page.
   const counterPerFile = new Map();
+  const overLimit = new Set();
+  const branch = new Set([rootId]);
+
+  const markOverLimit = (id) => {
+    const queue = [id];
+    while (queue.length) {
+      const next = queue.pop();
+      if (overLimit.has(next)) {
+        continue;
+      }
+      overLimit.add(next);
+      queue.push(...(connectionsBySource.get(next) ?? []));
+    }
+  };
+
+  const countConnections = (fromId) => {
+    (connectionsBySource.get(fromId) ?? []).forEach((targetId) => {
+      if (overLimit.has(targetId)) {
+        return;
+      }
+      const count = (counterPerFile.get(targetId) ?? 0) + 1;
+      counterPerFile.set(targetId, count);
+      if (count > repetitionLimit) {
+        markOverLimit(targetId);
+        return;
+      }
+      if (branch.has(targetId)) {
+        return;
+      }
+      branch.add(targetId);
+      countConnections(targetId);
+      branch.delete(targetId);
+    });
+  };
+
+  countConnections(rootId);
+
   const usedIds = new Set([rootId]);
-
-  const countConnections = (fromId, branchSeen = new Set()) => {
-    const nextTargets = connectionsBySource.get(fromId) ?? [];
-    nextTargets.forEach((targetId) => {
-      counterPerFile.set(targetId, (counterPerFile.get(targetId) ?? 0) + 1);
-      if (branchSeen.has(targetId)) {
-        return;
-      }
-      const nextBranchSeen = new Set(branchSeen);
-      nextBranchSeen.add(targetId);
-      countConnections(targetId, nextBranchSeen);
-    });
-  };
-
-  const saveUsed = (fromId, branchSeen = new Set()) => {
-    const nextTargets = connectionsBySource.get(fromId) ?? [];
-    nextTargets.forEach((targetId) => {
-      const count = counterPerFile.get(targetId) ?? 0;
-      if (count > 0 && count <= repetitionLimit) {
-        usedIds.add(targetId);
-      }
-      if (branchSeen.has(targetId)) {
-        return;
-      }
-      const nextBranchSeen = new Set(branchSeen);
-      nextBranchSeen.add(targetId);
-      saveUsed(targetId, nextBranchSeen);
-    });
-  };
-
-  countConnections(rootId, new Set([rootId]));
-  saveUsed(rootId, new Set([rootId]));
+  counterPerFile.forEach((count, id) => {
+    if (!overLimit.has(id) && count <= repetitionLimit) {
+      usedIds.add(id);
+    }
+  });
 
   return usedIds;
 };

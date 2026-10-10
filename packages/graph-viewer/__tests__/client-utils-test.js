@@ -327,6 +327,39 @@ describe('getHighLevelNodeIds', () => {
     const result = getHighLevelNodeIds({ data, repetitionLimit: 4 });
     assert.ok(result.has('X'));
   });
+
+  it('handles cycles', () => {
+    const data = {
+      entryId: 'A',
+      nodes: [{ id: 'A' }, { id: 'B' }, { id: 'C' }],
+      links: [
+        { source: 'A', target: 'B' },
+        { source: 'B', target: 'C' },
+        { source: 'C', target: 'B' },
+      ],
+    };
+    const result = getHighLevelNodeIds({ data, repetitionLimit: 4 });
+    assert.deepEqual([...result].sort(), ['A', 'B', 'C']);
+  });
+
+  it('stays fast on graphs with exponentially many paths', () => {
+    // 30 fully connected layers of 3 nodes: 3^30 paths from the root
+    const layers = Array.from({ length: 30 }, (_, layer) => [0, 1, 2].map((i) => `L${layer}-${i}`));
+    const nodes = [{ id: 'root' }, ...layers.flat().map((id) => ({ id }))];
+    const links = [
+      ...layers[0].map((target) => ({ source: 'root', target })),
+      ...layers.slice(1).flatMap((layer, index) =>
+        layers[index].flatMap((source) => layer.map((target) => ({ source, target }))),
+      ),
+    ];
+    const startedAt = Date.now();
+    const result = getHighLevelNodeIds({ data: { entryId: 'root', nodes, links }, repetitionLimit: 4 });
+    assert.ok(Date.now() - startedAt < 1000);
+    // layer 0 nodes are reached once, layer 1 three times, layer 2 nine times
+    assert.ok(result.has('L0-0'));
+    assert.ok(result.has('L1-0'));
+    assert.equal(result.has('L2-0'), false);
+  });
 });
 
 // ---------------------------------------------------------------------------

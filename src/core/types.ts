@@ -3,12 +3,22 @@ export type GatheredModuleConnection = {
   connectionIds: string[];
 };
 
+// `export { importedId as exportedId } from targetFileName`, also when written as
+// import + export, or wrapped in HOCs; `*` stands for `export * from`
+export type GatheredReExport = {
+  exportedId: string;
+  targetFileName: string;
+  importedId: string;
+};
+
 export type GatheredGraph = {
   // legacy shape kept for compatibility/debug
   connectionIdsByFileName: Array<[string, string[]]>;
   exportedIdsWithJsxByFileName: Array<[string, string[]]>;
   // agnostic shape used by the new build pipeline
   connectionsByFileName: Array<[string, GatheredModuleConnection[]]>;
+  // components each file re-exports from other files
+  reExportsByFileName?: Array<[string, GatheredReExport[]]>;
   // maps shortened graph path back to original filesystem path
   sourceFileNameByGraphPath?: Array<[string, string]>;
   // shared parent dir of all walked files; graph paths are relative to it

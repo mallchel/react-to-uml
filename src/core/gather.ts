@@ -1,24 +1,39 @@
 import path from 'node:path';
 import traverse, { Node, NodePath } from '@babel/traverse';
+import type { Node as BabelNode } from '@babel/types';
 import {
-  CallExpression,
-  ClassExpression,
-  ExportDefaultDeclaration,
-  ExportNamedDeclaration,
+  ExportDeclaration,
   Identifier,
-  VariableDeclaration,
+  ImportDeclaration,
+  StringLiteral,
+  isArrowFunctionExpression,
   isCallExpression,
   isClassDeclaration,
   isClassExpression,
+  isExportAllDeclaration,
   isExportDefaultDeclaration,
   isExportNamedDeclaration,
+  isExportSpecifier,
+  isFunctionDeclaration,
+  isFunctionExpression,
   isIdentifier,
+  isImportDefaultSpecifier,
+  isImportNamespaceSpecifier,
+  isParenthesizedExpression,
+  isTSAsExpression,
+  isTSNonNullExpression,
+  isTSSatisfiesExpression,
   isVariableDeclaration,
   isVariableDeclarator,
 } from '@babel/types';
 
 import { walkFiles } from './walk';
-import type { GatheredModuleConnection, GatheredGraph, GatherOptions } from './types';
+import type {
+  GatheredModuleConnection,
+  GatheredGraph,
+  GatheredReExport,
+  GatherOptions,
+} from './types';
 
 const componentNamePattern = /^[A-Z]\w*/;
 const { parseSync } = require('@babel/core') as {
@@ -50,6 +65,10 @@ export const getCommonParentDir = (fileNames: string[]) => {
   return first.slice(0, commonLength).join(path.sep) || path.parse(fileNames[0]).root;
 };
 
+type ResolvedExport =
+  | { kind: 'jsx' }
+  | { kind: 'reexport'; targetFileName: string; importedId: string };
+
 const gatherSingleFile = ({
   source,
   fileName,
@@ -60,11 +79,24 @@ const gatherSingleFile = ({
   resolveImport: (importPath: string) => string | undefined;
 }) => {
   const varsWithJsx = new Set<string>();
-  const varDeclarationsByName = new Map<string, VariableDeclaration>();
+  // every AST node that has JSX somewhere inside it
+  const nodesWithJsx = new WeakSet<object>();
+  const initByVarName = new Map<string, BabelNode | null | undefined>();
+  const importBindings = new Map<string, { targetFileName: string; importedId: string }>();
+  // @babel/traverse ships its own @babel/types copy, so nodes are cast to the direct dependency's types
+  const exportNodes: ExportDeclaration[] = [];
   const connectionIds: string[] = [];
   const exportedIdsWithJsx: string[] = [];
   const connections: GatheredModuleConnection[] = [];
+  const reExports: GatheredReExport[] = [];
   const resolvedImportsToTraverse: string[] = [];
+  const emptyResult = {
+    connectionIds,
+    exportedIdsWithJsx,
+    connections,
+    reExports,
+    resolvedImportsToTraverse,
+  };
 
   // .ts files can't contain JSX, and `<Type>value` casts there break the jsx plugin
   const isPlainTs = /\.[mc]?ts$/.test(fileName);
@@ -81,12 +113,15 @@ const gatherSingleFile = ({
     });
   } catch (error) {
     console.warn(`Skipped ${fileName}: ${(error as Error).message.split('\n')[0]}`);
-    return { connectionIds, exportedIdsWithJsx, connections, resolvedImportsToTraverse };
+    return emptyResult;
   }
 
   if (!ast) {
-    return { connectionIds, exportedIdsWithJsx, connections, resolvedImportsToTraverse };
+    return emptyResult;
   }
+
+  const getModuleExportName = (node: Identifier | StringLiteral) =>
+    isIdentifier(node) ? node.name : node.value;
 
   traverse(ast, {
     ImportDeclaration: {
@@ -108,14 +143,14 @@ const gatherSingleFile = ({
 
         const connectionIdsByTarget: string[] = [];
 
-        path.node.specifiers.forEach(({ type, ...rest }) => {
-          const importedName =
-            (rest as { imported?: { name?: string } }).imported?.name ??
-            (type === 'ImportDefaultSpecifier' ? 'default' : undefined);
-
-          if (!importedName) {
+        (path.node as unknown as ImportDeclaration).specifiers.forEach((specifier) => {
+          if (isImportNamespaceSpecifier(specifier)) {
             return;
           }
+          const importedName = isImportDefaultSpecifier(specifier)
+            ? 'default'
+            : getModuleExportName(specifier.imported);
+          importBindings.set(specifier.local.name, { targetFileName, importedId: importedName });
 
           if (!componentNamePattern.test(importedName) && importedName !== 'default') {
             return;
@@ -139,10 +174,12 @@ const gatherSingleFile = ({
         let targetParentPath: NodePath<Node> | null = path.parentPath;
 
         while (targetParentPath) {
+          nodesWithJsx.add(targetParentPath.node);
           if (
             (isVariableDeclarator(targetParentPath.node) ||
               isClassExpression(targetParentPath.node) ||
-              isClassDeclaration(targetParentPath.node)) &&
+              isClassDeclaration(targetParentPath.node) ||
+              isFunctionDeclaration(targetParentPath.node)) &&
             isIdentifier(targetParentPath.node.id) &&
             targetParentPath.node.id.name
           ) {
@@ -153,96 +190,153 @@ const gatherSingleFile = ({
       },
     },
 
-    VariableDeclaration: {
+    VariableDeclarator: {
       exit(path) {
-        if (isIdentifier(path.node.declarations[0]?.id)) {
-          varDeclarationsByName.set(path.node.declarations[0].id.name, path.node);
+        if (isIdentifier(path.node.id)) {
+          initByVarName.set(path.node.id.name, path.node.init as BabelNode | null | undefined);
         }
       },
     },
 
+    // handled after traversal, when every declaration and JSX usage in the file is known
     ExportDeclaration: {
       exit(path) {
-        if (!isExportDefaultDeclaration(path.node) && !isExportNamedDeclaration(path.node)) {
-          return;
-        }
-
-        const checkIdentifier = (identifier?: Identifier | null) => {
-          if (identifier?.name && varsWithJsx.has(identifier.name)) {
-            return identifier.name;
-          }
-        };
-
-        const findWithinVarDeclaration = (node: VariableDeclaration): string | undefined => {
-          let name: string | undefined;
-          name = checkIdentifier(node.declarations[0].id as Identifier);
-          if (name) {
-            return name;
-          }
-
-          name = checkIdentifier(node.declarations[0].init as Identifier);
-          if (name) {
-            return name;
-          }
-
-          const varDeclaration = varDeclarationsByName.get(
-            (node.declarations[0].init as Identifier)?.name,
-          );
-          if (varDeclaration) {
-            return findWithinVarDeclaration(varDeclaration);
-          }
-        };
-
-        const findWithinCallExpression = (node: CallExpression) => {
-          const firstArg = node.arguments[0] as Identifier | ClassExpression | undefined;
-          const name =
-            checkIdentifier(firstArg as Identifier) ||
-            (((firstArg as ClassExpression | undefined)?.id &&
-              checkIdentifier((firstArg as ClassExpression).id as Identifier)) as
-              | string
-              | undefined);
-
-          if (name) {
-            return name;
-          }
-        };
-
-        const findVarWithJsx = (node: ExportDefaultDeclaration | ExportNamedDeclaration) => {
-          let name: string | undefined;
-
-          if (isIdentifier(node.declaration) && (name = checkIdentifier(node.declaration))) {
-            return name;
-          }
-
-          if (
-            isClassDeclaration(node.declaration) &&
-            (name = checkIdentifier(node.declaration.id))
-          ) {
-            return name;
-          }
-
-          if (isVariableDeclaration(node.declaration)) {
-            return findWithinVarDeclaration(node.declaration);
-          }
-
-          if (isCallExpression(node.declaration)) {
-            return findWithinCallExpression(node.declaration);
-          }
-        };
-
-        const exportedName = findVarWithJsx(path.node);
-        if (!exportedName) {
-          return;
-        }
-
-        exportedIdsWithJsx.push(
-          path.node.type === 'ExportDefaultDeclaration' ? 'default' : exportedName,
-        );
+        exportNodes.push(path.node as unknown as ExportDeclaration);
       },
     },
   });
 
-  return { connectionIds, exportedIdsWithJsx, connections, resolvedImportsToTraverse };
+  // what an exported expression is: a component of this file, or a component re-exported
+  // from another file (directly or wrapped in HOCs like connect()(X), memo(X), compose(...)(X))
+  const resolveExport = (
+    node: BabelNode | null | undefined,
+    seen = new Set<string>(),
+  ): ResolvedExport | undefined => {
+    if (!node) {
+      return undefined;
+    }
+
+    if (isIdentifier(node)) {
+      if (varsWithJsx.has(node.name)) {
+        return { kind: 'jsx' };
+      }
+      const binding = importBindings.get(node.name);
+      if (binding) {
+        return { kind: 'reexport', ...binding };
+      }
+      if (initByVarName.has(node.name) && !seen.has(node.name)) {
+        seen.add(node.name);
+        return resolveExport(initByVarName.get(node.name), seen);
+      }
+      return undefined;
+    }
+
+    if (isCallExpression(node)) {
+      for (const arg of node.arguments) {
+        const resolved = resolveExport(arg, seen);
+        if (resolved) {
+          return resolved;
+        }
+      }
+      return undefined;
+    }
+
+    if (
+      isTSAsExpression(node) ||
+      isTSSatisfiesExpression(node) ||
+      isTSNonNullExpression(node) ||
+      isParenthesizedExpression(node)
+    ) {
+      return resolveExport(node.expression, seen);
+    }
+
+    if (
+      (isArrowFunctionExpression(node) ||
+        isFunctionExpression(node) ||
+        isFunctionDeclaration(node) ||
+        isClassExpression(node) ||
+        isClassDeclaration(node)) &&
+      nodesWithJsx.has(node)
+    ) {
+      return { kind: 'jsx' };
+    }
+
+    return undefined;
+  };
+
+  const addExport = (exportedId: string, resolved: ResolvedExport | undefined) => {
+    if (resolved?.kind === 'jsx') {
+      exportedIdsWithJsx.push(exportedId);
+    } else if (resolved?.kind === 'reexport') {
+      reExports.push({
+        exportedId,
+        targetFileName: resolved.targetFileName,
+        importedId: resolved.importedId,
+      });
+    }
+  };
+
+  exportNodes.forEach((node) => {
+    if (isExportDefaultDeclaration(node)) {
+      addExport('default', resolveExport(node.declaration));
+      return;
+    }
+
+    // export { A, default as B } from './x' / export * from './x'
+    if ((isExportNamedDeclaration(node) || isExportAllDeclaration(node)) && node.source) {
+      const targetFileName = resolveImport(node.source.value);
+      if (!targetFileName) {
+        return;
+      }
+      resolvedImportsToTraverse.push(targetFileName);
+
+      if (isExportAllDeclaration(node)) {
+        reExports.push({ exportedId: '*', targetFileName, importedId: '*' });
+        return;
+      }
+      node.specifiers.forEach((specifier) => {
+        if (isExportSpecifier(specifier)) {
+          reExports.push({
+            exportedId: getModuleExportName(specifier.exported),
+            targetFileName,
+            importedId: specifier.local.name,
+          });
+        }
+      });
+      return;
+    }
+
+    if (!isExportNamedDeclaration(node)) {
+      return;
+    }
+
+    const { declaration } = node;
+    if (isVariableDeclaration(declaration)) {
+      declaration.declarations.forEach((declarator) => {
+        if (isIdentifier(declarator.id)) {
+          addExport(
+            declarator.id.name,
+            varsWithJsx.has(declarator.id.name) ? { kind: 'jsx' } : resolveExport(declarator.init),
+          );
+        }
+      });
+      return;
+    }
+
+    if ((isFunctionDeclaration(declaration) || isClassDeclaration(declaration)) && declaration.id) {
+      addExport(declaration.id.name, resolveExport(declaration));
+      return;
+    }
+
+    // export { A, B as C }
+    node.specifiers.forEach((specifier) => {
+      if (isExportSpecifier(specifier)) {
+        addExport(getModuleExportName(specifier.exported), resolveExport(specifier.local));
+      }
+    });
+  });
+
+  return emptyResult;
 };
 
 export const gatherGraph = ({ entryFileName, acceptableExts }: GatherOptions): GatheredGraph => {
@@ -250,6 +344,7 @@ export const gatherGraph = ({ entryFileName, acceptableExts }: GatherOptions): G
   const connectionIdsByFileName = new Map<string, string[]>();
   const exportedIdsWithJsxByFileName = new Map<string, string[]>();
   const connectionsByFileName = new Map<string, GatheredModuleConnection[]>();
+  const reExportsByFileName = new Map<string, GatheredReExport[]>();
   const walkedFileNames: string[] = [];
 
   walkFiles({
@@ -272,6 +367,9 @@ export const gatherGraph = ({ entryFileName, acceptableExts }: GatherOptions): G
       if (next.connections.length) {
         connectionsByFileName.set(fileName, next.connections);
       }
+      if (next.reExports.length) {
+        reExportsByFileName.set(fileName, next.reExports);
+      }
 
       return next.resolvedImportsToTraverse;
     },
@@ -291,6 +389,13 @@ export const gatherGraph = ({ entryFileName, acceptableExts }: GatherOptions): G
       connections.map((connection) => ({
         ...connection,
         targetFileName: shorten(connection.targetFileName),
+      })),
+    ]),
+    reExportsByFileName: shortenKeys(reExportsByFileName).map(([fileName, reExports]) => [
+      fileName,
+      reExports.map((reExport) => ({
+        ...reExport,
+        targetFileName: shorten(reExport.targetFileName),
       })),
     ]),
     sourceFileNameByGraphPath: walkedFileNames.map((fileName) => [shorten(fileName), fileName]),

@@ -397,7 +397,8 @@ const GraphCanvas = ({
   }, [hierarchyDirection, layoutMode, matchedIds, omitBySearch, renderData, spacingFactor]);
 
   return (
-    <svg ref={svgRef} style={{ width: '100%', height: 'calc(100vh - 68px)', display: 'block' }} />
+    // fills the space left under the toolbar, which may wrap to several rows
+    <svg ref={svgRef} style={{ width: '100%', flex: '1 1 auto', minHeight: 0, display: 'block' }} />
   );
 };
 
@@ -490,8 +491,10 @@ const App = () => {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
         background:
           'radial-gradient(1300px 820px at 0% 0%, rgba(39,57,126,0.85) 0%, rgba(12,17,36,1) 50%, rgba(5,8,19,1) 100%)',
         color: '#d8e1ff',
@@ -503,6 +506,7 @@ const App = () => {
       <div
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           gap: 12,
           padding: '10px 14px',
@@ -530,8 +534,8 @@ const App = () => {
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder='Search node path...'
           style={{
-            minWidth: 280,
-            width: '42vw',
+            flex: '1 1 200px',
+            minWidth: 160,
             maxWidth: 560,
             border: '1px solid rgba(142,160,211,0.35)',
             background: 'rgba(7,11,24,0.82)',

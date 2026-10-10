@@ -20,6 +20,8 @@
 
 `react-to-uml` walks your source files from an entry file, finds which React components render which, and shows the result as an interactive graph. It reads files directly, so no Babel or Webpack plugin setup is needed.
 
+![Searching, zooming and filtering in the graph viewer](docs/viewer-demo.gif)
+
 ## Usage with npx
 
 Run it from your project root and point `ENTRY` at your app entry file:
@@ -65,6 +67,15 @@ Variables can also go in a `.env` file in the current directory. Variables set i
 
 Relative paths are resolved from the current directory.
 
+## Using the viewer
+
+- **Search** highlights files whose path contains the text. Turn on **Omit by search** to hide everything else.
+- **Scroll** to zoom and **drag the background** to pan. In the Force layout you can also drag nodes.
+- **Layout**: *Package groups* (default) draws one box per package, in import order. *Hierarchy* places components by render depth, left-to-right or top-to-bottom. *Force* lays nodes out freely.
+- **Spacing** spreads the layout out.
+- **Max repeats** hides components reached more often than this from the entry, such as buttons and icons used everywhere. It starts at `REPETITIVE_COUNT_FOR_REMOVE_FROM_TREE`. **Show all components** turns this filter off.
+- The counter at the top right shows how many nodes and links are visible.
+
 ## Outputs
 
 These files are written to `DUMP_DIR`:
@@ -73,6 +84,8 @@ These files are written to `DUMP_DIR`:
 - `treeComponentsGraph.json`: component graph as `[fileName, childFileNames[]]` pairs
 - `graphNodeMetaByFileName.json`: package and directory info per node, which the viewer uses for grouping
 - `proxyPathsWithJsx.json`: re-exports traced to the files that define the components
+
+A file counts as a component when it exports something that renders JSX: a function, arrow function or class, also when wrapped in HOCs like `connect(...)(App)`, `memo(...)` or `compose(...)(App)`. Re-exports (`export { default as X } from`, `export * from`, or import then export) are followed to the file that defines the component. Imports through dynamic `import()` / `React.lazy` are not followed.
 
 Node ids are file paths relative to the **deepest folder shared by all walked files**. In a monorepo, a graph that reaches `packages/app` and `packages/ui` gets ids like `/app/Root.tsx` and `/ui/Button.tsx`. Imports through workspace symlinks resolve to the real source files, and files under `node_modules` and `.d.ts` files are skipped.
 

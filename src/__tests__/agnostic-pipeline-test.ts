@@ -234,6 +234,82 @@ describe('agnostic pipeline', () => {
   });
 });
 
+describe('export detection', () => {
+  const buildFromFiles = (files: Record<string, string>) => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), 'react-to-uml-exports-test-'));
+    Object.entries(files).forEach(([fileName, source]) => {
+      mkdirSync(path.dirname(path.join(tempDir, fileName)), { recursive: true });
+      writeFileSync(path.join(tempDir, fileName), source);
+    });
+    const entryFileName = path.join(tempDir, 'index.js');
+    const graph = gatherGraph({ entryFileName });
+    const outFileName = path.join(tempDir, 'out', 'treeComponentsGraph.json');
+    mkdirSync(path.dirname(outFileName), { recursive: true });
+    const { treeComponentsGraph } = buildGraphFromGraph({ graph, entryFileName, outFileName });
+    rmSync(tempDir, { recursive: true, force: true });
+    return { graph, treeComponentsGraph };
+  };
+
+  test('detects components wrapped in HOCs through a variable', () => {
+    const { treeComponentsGraph } = buildFromFiles({
+      'index.js': `import App from './App'; export default App;`,
+      'App.js': `import Header from './Header'; const connect = () => (c) => c;
+        const App = () => <Header />;
+        const Component = connect(a, b)(App);
+        export default Component;`,
+      'Header.js': `export default function Header() { return <header />; }`,
+    });
+
+    assert.deepEqual(treeComponentsGraph.get('/index.js'), ['/App.js']);
+    assert.deepEqual(treeComponentsGraph.get('/App.js'), ['/Header.js']);
+  });
+
+  test('does not treat a component imports as its own re-exports', () => {
+    // App is not a component here, so its default import of Child must not leak to index.js
+    const { treeComponentsGraph } = buildFromFiles({
+      'index.js': `import App from './App'; export default App;`,
+      'App.js': `import Child from './Child'; export default { Child };`,
+      'Child.js': `export default () => <div />;`,
+    });
+
+    assert.deepEqual(treeComponentsGraph.get('/index.js'), []);
+  });
+
+  test('detects function declarations, memo and export specifiers', () => {
+    const { graph } = buildFromFiles({
+      'index.js': `import A from './A'; import { B, C, D } from './B';`,
+      'A.js': `function A() { return <div />; } export { A as default };`,
+      'B.tsx': `import { memo } from 'react';
+        export function B() { return <b />; }
+        export const C = memo(() => <i />);
+        const D = (() => <u />) as unknown as React.FC;
+        export { D };
+        export const notComponent = 1;`,
+    });
+    const exported = new Map(graph.exportedIdsWithJsxByFileName);
+
+    assert.deepEqual(exported.get('/A.js'), ['default']);
+    assert.deepEqual(exported.get('/B.tsx'), ['B', 'C', 'D']);
+  });
+
+  test('resolves components through barrel files', () => {
+    const { treeComponentsGraph } = buildFromFiles({
+      'index.js': `import { Button, Card } from './ui'; import Modal from './modal';
+        export const Root = () => <><Button /><Card /><Modal /></>;`,
+      'ui/index.js': `export { default as Button } from './Button'; export * from './Card';`,
+      'ui/Button.js': `export default () => <button />;`,
+      'ui/Card.js': `export const Card = () => <section />;`,
+      'modal/index.js': `import Modal from './Modal'; export default withTheme(Modal);`,
+      'modal/Modal.js': `export default () => <dialog />;`,
+    });
+
+    assert.deepEqual(
+      [...(treeComponentsGraph.get('/index.js') ?? [])].sort(),
+      ['/modal/Modal.js', '/ui/Button.js', '/ui/Card.js'],
+    );
+  });
+});
+
 describe('getCommonParentDir', () => {
   test('returns deepest shared dir', () => {
     assert.equal(
